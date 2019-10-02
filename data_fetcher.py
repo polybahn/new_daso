@@ -38,6 +38,13 @@ class data_loader:
 
         self.train_item, self.val_item, self.test_item = self.train_val_test_split(self.ratings)
 
+        # build for importance sampling to train generator
+        self.user_pos_train = {}
+        for u, i in self.train_item:
+            if u not in self.user_pos_train:
+                self.user_pos_train[u] = list()
+            self.user_pos_train[u].append(i)
+
         # mark position of current data iterator
         self.i_pos = 0
         self.u_pos = 0
