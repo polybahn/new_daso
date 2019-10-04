@@ -393,6 +393,7 @@ if __name__=="__main__":
         previous_epoch = 0
         batch_cnt = 0
         batch_losses = []
+        previous_batch_loss = 100
         while dl.epoch_cnt < 10:
             batch = next(dl)
             user_ids, positive_items = tf.stack(batch, axis=1)
@@ -407,8 +408,9 @@ if __name__=="__main__":
                 batch_losses = list()
                 previous_epoch = dl.epoch_cnt
                 print("average loss at epoch %d is : %f" % (dl.epoch_cnt, mean_batch_loss))
-                if mean_batch_loss < 0.3:
+                if np.abs((previous_batch_loss - mean_batch_loss) / mean_batch_loss) < 0.05:
                     break
+                previous_batch_loss = mean_batch_loss
             if batch_cnt % report_fr == 0:
                 print(loss)
             batch_cnt += 1
@@ -418,7 +420,7 @@ if __name__=="__main__":
         # train item generator
         dl.epoch_cnt = 0
         previous_epoch = 0
-        loss = 10
+        previous_batch_loss = 100
         batch_cnt = 0
         batch_losses = []
         while dl.epoch_cnt < 10:
@@ -434,9 +436,10 @@ if __name__=="__main__":
                 batch_losses = list()
                 previous_epoch = dl.epoch_cnt
                 print("loss at epoch %d is : %f" % (dl.epoch_cnt, mean_batch_loss))
+                if np.abs((previous_batch_loss - mean_batch_loss) / mean_batch_loss) < 0.05:
+                    break
+                previous_batch_loss = mean_batch_loss
             print(loss)
-            if loss < 1e-2:
-                break
             batch_cnt += 1
         print("end of item gene")
         print("gen " + str(simple_test('gen')))
@@ -449,6 +452,7 @@ if __name__=="__main__":
         previous_epoch = 0
         batch_cnt = 0
         batch_losses = []
+        previous_batch_loss = 100
         while dl.epoch_cnt < 10:
             batch = next(dl)
             user_ids, positive_friends = tf.stack(batch, axis=1)
@@ -463,8 +467,9 @@ if __name__=="__main__":
                 batch_losses = list()
                 previous_epoch = dl.epoch_cnt
                 print("average loss at epoch %d is : %f" % (dl.epoch_cnt, mean_batch_loss))
-                if mean_batch_loss < 0.3:
+                if np.abs((previous_batch_loss - mean_batch_loss) / mean_batch_loss) < 0.05:
                     break
+                previous_batch_loss = mean_batch_loss
             if batch_cnt % report_fr == 0:
                 print(loss)
             batch_cnt += 1
@@ -476,6 +481,7 @@ if __name__=="__main__":
         loss = 10
         batch_cnt = 0
         batch_losses = []
+        previous_batch_loss = 100
         while dl.epoch_cnt < 10:
             batch = next(dl)
             all_positive_friends = [dl.user_friends[u] for u, _ in batch]
@@ -485,14 +491,14 @@ if __name__=="__main__":
             if previous_epoch < dl.epoch_cnt:
                 save_path = manager.save()
                 print("Saved checkpoint for user_generator step {}: {}".format(dl.epoch_cnt, save_path))
-
                 mean_batch_loss = float(np.mean(batch_losses))
                 batch_losses = list()
                 previous_epoch = dl.epoch_cnt
                 print("loss at epoch %d is : %f" % (dl.epoch_cnt, mean_batch_loss))
+                if np.abs((previous_batch_loss - mean_batch_loss) / mean_batch_loss) < 0.05:
+                    break
+                previous_batch_loss = mean_batch_loss
             print(loss)
-            if loss < 1e-7:
-                break
             batch_cnt += 1
         print("end of user gen")
         #
@@ -502,6 +508,7 @@ if __name__=="__main__":
         loss = 10
         batch_cnt = 0
         batch_losses = []
+        previous_batch_loss = 100
         while dl.epoch_cnt < 2:
             batch = next(dl)
             user_ids, _ = tf.stack(batch, axis=1)
@@ -514,8 +521,9 @@ if __name__=="__main__":
                 batch_losses = list()
                 previous_epoch = dl.epoch_cnt
                 print("loss at epoch %d is : %f" % (dl.epoch_cnt, mean_batch_loss))
-            if loss < 1e-2:
-                break
+                if np.abs((previous_batch_loss - mean_batch_loss) / mean_batch_loss) < 0.05:
+                    break
+                previous_batch_loss = mean_batch_loss
             print(loss)
             batch_cnt += 1
         print("end of transfer part")
