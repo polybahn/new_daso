@@ -19,6 +19,7 @@ class data_loader:
         self.r_i_m = dict([(v, k) for k, v in self.item_mapping])
         self.write_mapping(base_path + 'item_mapping_new_to_ori.csv', self.item_mapping)
         self.n_item = len(self.ori_items)
+        self.all_items = set(self.r_i_m.values())
 
         self.ori_users = set([u for u, i in self.ratings])
         self.ori_users.update(set(dict(self.socials).keys()))
@@ -44,6 +45,22 @@ class data_loader:
             if u not in self.user_pos_train:
                 self.user_pos_train[u] = list()
             self.user_pos_train[u].append(i)
+
+        self.user_friends = {}
+        for u, f in self.socials:
+            if u not in self.user_friends:
+                self.user_friends[u] = list()
+            if f not in self.user_friends:
+                self.user_friends[f] = list()
+            self.user_friends[u].append(f)
+            self.user_friends[f].append(u)
+
+        # build test positive items for precision and ndcg
+        self.user_pos_val = {}
+        for u, i in self.val_item:
+            if u not in self.user_pos_val:
+                self.user_pos_val[u] = set()
+            self.user_pos_val[u].add(i)
 
         # mark position of current data iterator
         self.i_pos = 0
