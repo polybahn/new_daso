@@ -169,7 +169,7 @@ def item_discriminator_loss(user_indices, positive_item_indices, negative_item_i
 
 def train_item_discriminator(user_indices, positive_item_indices, negative_item_indices):
     with tf.GradientTape() as tape:
-        item_d_loss = item_discriminator_loss(user_indices, positive_item_indices, negative_item_indices) + compute_l2_regularization(i_d_trainable_variables, 0.001)
+        item_d_loss = item_discriminator_loss(user_indices, positive_item_indices, negative_item_indices) + compute_l2_regularization(i_d_trainable_variables, 0.00001)
         item_d_grad = tape.gradient(item_d_loss, i_d_trainable_variables)
         optimizer.apply_gradients(zip(item_d_grad, i_d_trainable_variables))
         return tf.reduce_sum(item_d_loss).numpy()
@@ -193,7 +193,7 @@ def user_discriminator_loss(user_indices, positive_friend_indices, negative_frie
 
 def train_user_discriminator(user_indices, positive_friend_indices, negative_friend_indices):
     with tf.GradientTape() as tape:
-        user_d_loss = user_discriminator_loss(user_indices, positive_friend_indices, negative_friend_indices) + compute_l2_regularization(u_d_trainable_variables, 0.001)
+        user_d_loss = user_discriminator_loss(user_indices, positive_friend_indices, negative_friend_indices) + compute_l2_regularization(u_d_trainable_variables, 0.00001)
         user_d_grad = tape.gradient(user_d_loss, u_d_trainable_variables)
         optimizer.apply_gradients(zip(user_d_grad, u_d_trainable_variables))
         return tf.reduce_sum(user_d_loss).numpy()
@@ -236,7 +236,7 @@ def train_transfer_component(user_indices):
             transfer_to_social_domain(transfer_to_item_domain(u_g_user_embedding)) - u_g_user_embedding) +
                                          tf.nn.l2_loss(transfer_to_item_domain(
                                              transfer_to_social_domain(i_g_user_embedding)) - i_g_user_embedding) +
-                                         compute_l2_regularization(transfer_trainable_variables, 0.1))
+                                         compute_l2_regularization(transfer_trainable_variables, 1))
     # apply gradients
     grad = tape.gradient(regular_loss, transfer_trainable_variables)
     optimizer.apply_gradients(zip(grad, transfer_trainable_variables))
@@ -292,7 +292,7 @@ def train_item_generator(user_indices, all_positive_items):
             user_ids = tf.tile(user_id, [len(positive_items)*2])
             i_reward_from_discriminator = item_discriminator_reward(user_ids, sampled_ids, is_gen=True)
             i_reward_from_discriminator = tf.multiply(i_reward_from_discriminator, reward_weight)
-            i_g_loss = -tf.reduce_mean(tf.multiply(log_sampled_prob, i_reward_from_discriminator)) + compute_l2_regularization(i_g_trainable_variables, 1)
+            i_g_loss = -tf.reduce_mean(tf.multiply(log_sampled_prob, i_reward_from_discriminator)) + compute_l2_regularization(i_g_trainable_variables, 0.001)
 
         grad = tape.gradient(i_g_loss, i_g_trainable_variables)
         optimizer.apply_gradients(zip(grad, i_g_trainable_variables))
@@ -340,7 +340,7 @@ def train_user_generator(user_indices, all_positive_friends):
             user_ids = tf.tile(user_id, [len(positive_friends)*2])
             u_reward_from_discriminator = user_discriminator_reward(user_ids, sampled_ids, is_gen=True)
             u_reward_from_discriminator = tf.multiply(u_reward_from_discriminator, reward_weight)
-            u_g_loss = -tf.reduce_mean(tf.multiply(log_sampled_prob, u_reward_from_discriminator)) + compute_l2_regularization(u_g_trainable_variables, 1)
+            u_g_loss = -tf.reduce_mean(tf.multiply(log_sampled_prob, u_reward_from_discriminator)) + compute_l2_regularization(u_g_trainable_variables, 0.001)
 
         grad = tape.gradient(u_g_loss, u_g_trainable_variables)
         optimizer.apply_gradients(zip(grad, u_g_trainable_variables))
@@ -502,7 +502,7 @@ if __name__=="__main__":
         loss = 10
         batch_cnt = 0
         batch_losses = []
-        while dl.epoch_cnt < 10:
+        while dl.epoch_cnt < 2:
             batch = next(dl)
             user_ids, _ = tf.stack(batch, axis=1)
             loss = train_transfer_component(user_ids)
@@ -516,6 +516,7 @@ if __name__=="__main__":
                 print("loss at epoch %d is : %f" % (dl.epoch_cnt, mean_batch_loss))
             if loss < 1e-2:
                 break
+            print(loss)
             batch_cnt += 1
         print("end of transfer part")
 
