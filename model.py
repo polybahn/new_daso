@@ -169,7 +169,7 @@ def item_discriminator_loss(user_indices, positive_item_indices, negative_item_i
 
 def train_item_discriminator(user_indices, positive_item_indices, negative_item_indices):
     with tf.GradientTape() as tape:
-        item_d_loss = item_discriminator_loss(user_indices, positive_item_indices, negative_item_indices) + compute_l2_regularization(i_d_trainable_variables, 0.01)
+        item_d_loss = item_discriminator_loss(user_indices, positive_item_indices, negative_item_indices) + compute_l2_regularization(i_d_trainable_variables, 0.001)
         item_d_grad = tape.gradient(item_d_loss, i_d_trainable_variables)
         optimizer.apply_gradients(zip(item_d_grad, i_d_trainable_variables))
         return tf.reduce_sum(item_d_loss).numpy()
@@ -193,7 +193,7 @@ def user_discriminator_loss(user_indices, positive_friend_indices, negative_frie
 
 def train_user_discriminator(user_indices, positive_friend_indices, negative_friend_indices):
     with tf.GradientTape() as tape:
-        user_d_loss = user_discriminator_loss(user_indices, positive_friend_indices, negative_friend_indices) + compute_l2_regularization(u_d_trainable_variables, 0.01)
+        user_d_loss = user_discriminator_loss(user_indices, positive_friend_indices, negative_friend_indices) + compute_l2_regularization(u_d_trainable_variables, 0.001)
         user_d_grad = tape.gradient(user_d_loss, u_d_trainable_variables)
         optimizer.apply_gradients(zip(user_d_grad, u_d_trainable_variables))
         return tf.reduce_sum(user_d_loss).numpy()
