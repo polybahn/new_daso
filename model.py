@@ -81,7 +81,7 @@ u_d_para = [u_d_user_emb_matrix, u_d_bias]
 
 si_trainable_vars = [u_g_user_emb_matrix] + si_para
 is_trainable_vars = [i_g_user_emb_matrix] + is_para
-i_g_trainable_variables = [i_g_item_emb_matrix, i_g_bias] + si_trainable_vars
+i_g_trainable_variables = [i_g_item_emb_matrix, i_g_user_emb_matrix, i_g_bias] + si_para
 u_g_trainable_variables = [u_g_user_emb_matrix, u_g_bias] + is_para
 transfer_trainable_variables = si_trainable_vars + is_trainable_vars
 i_d_trainable_variables = [i_d_user_emb_matrix, i_d_item_emb_matrix, i_d_bias]
@@ -169,7 +169,7 @@ def item_discriminator_loss(user_indices, positive_item_indices, negative_item_i
 
 def train_item_discriminator(user_indices, positive_item_indices, negative_item_indices):
     with tf.GradientTape() as tape:
-        item_d_loss = item_discriminator_loss(user_indices, positive_item_indices, negative_item_indices) + compute_l2_regularization(i_d_trainable_variables, 0.00001)
+        item_d_loss = item_discriminator_loss(user_indices, positive_item_indices, negative_item_indices) + compute_l2_regularization(i_d_trainable_variables, 1e-8)
         item_d_grad = tape.gradient(item_d_loss, i_d_trainable_variables)
         optimizer.apply_gradients(zip(item_d_grad, i_d_trainable_variables))
         return tf.reduce_sum(item_d_loss).numpy()
@@ -193,7 +193,7 @@ def user_discriminator_loss(user_indices, positive_friend_indices, negative_frie
 
 def train_user_discriminator(user_indices, positive_friend_indices, negative_friend_indices):
     with tf.GradientTape() as tape:
-        user_d_loss = user_discriminator_loss(user_indices, positive_friend_indices, negative_friend_indices) + compute_l2_regularization(u_d_trainable_variables, 0.00001)
+        user_d_loss = user_discriminator_loss(user_indices, positive_friend_indices, negative_friend_indices) + compute_l2_regularization(u_d_trainable_variables, 1e-8)
         user_d_grad = tape.gradient(user_d_loss, u_d_trainable_variables)
         optimizer.apply_gradients(zip(user_d_grad, u_d_trainable_variables))
         return tf.reduce_sum(user_d_loss).numpy()
@@ -226,21 +226,21 @@ def transfer_to_social_domain(i_user_embeddings):
     return u_user_embedding_sim
 
 
-def train_transfer_component(user_indices):
-    # transfer loss
-    with tf.GradientTape() as tape:
-        u_g_user_embedding = tf.nn.embedding_lookup(u_g_user_emb_matrix, user_indices)
-        i_g_user_embedding = tf.nn.embedding_lookup(i_g_user_emb_matrix, user_indices)
-
-        regular_loss = regularization * (tf.nn.l2_loss(
-            transfer_to_social_domain(transfer_to_item_domain(u_g_user_embedding)) - u_g_user_embedding) +
-                                         tf.nn.l2_loss(transfer_to_item_domain(
-                                             transfer_to_social_domain(i_g_user_embedding)) - i_g_user_embedding) +
-                                         compute_l2_regularization(transfer_trainable_variables, 1))
-    # apply gradients
-    grad = tape.gradient(regular_loss, transfer_trainable_variables)
-    optimizer.apply_gradients(zip(grad, transfer_trainable_variables))
-    return regular_loss.numpy()
+# def train_transfer_component(user_indices):
+#     # transfer loss
+#     with tf.GradientTape() as tape:
+#         u_g_user_embedding = tf.nn.embedding_lookup(u_g_user_emb_matrix, user_indices)
+#         i_g_user_embedding = tf.nn.embedding_lookup(i_g_user_emb_matrix, user_indices)
+#
+#         regular_loss = regularization * (tf.nn.l2_loss(
+#             transfer_to_social_domain(transfer_to_item_domain(u_g_user_embedding)) - u_g_user_embedding) +
+#                                          tf.nn.l2_loss(transfer_to_item_domain(
+#                                              transfer_to_social_domain(i_g_user_embedding)) - i_g_user_embedding) +
+#                                          compute_l2_regularization(transfer_trainable_variables, 1))
+#     # apply gradients
+#     grad = tape.gradient(regular_loss, transfer_trainable_variables)
+#     optimizer.apply_gradients(zip(grad, transfer_trainable_variables))
+#     return regular_loss.numpy()
 
 
 
@@ -292,7 +292,12 @@ def train_item_generator(user_indices, all_positive_items):
             user_ids = tf.tile(user_id, [len(positive_items)*2])
             i_reward_from_discriminator = item_discriminator_reward(user_ids, sampled_ids, is_gen=True)
             i_reward_from_discriminator = tf.multiply(i_reward_from_discriminator, reward_weight)
-            i_g_loss = -tf.reduce_mean(tf.multiply(log_sampled_prob, i_reward_from_discriminator)) + compute_l2_regularization(i_g_trainable_variables, 0.001)
+
+
+            regular_loss = regularization * tf.nn.l2_loss(
+                get_emb_from_social_space(user_id) - tf.nn.embedding_lookup(i_g_user_emb_matrix, user_id))
+
+            i_g_loss = -tf.reduce_mean(tf.multiply(log_sampled_prob, i_reward_from_discriminator)) + regular_loss + compute_l2_regularization(i_g_trainable_variables, 1e-3)
 
         grad = tape.gradient(i_g_loss, i_g_trainable_variables)
         optimizer.apply_gradients(zip(grad, i_g_trainable_variables))
@@ -340,7 +345,10 @@ def train_user_generator(user_indices, all_positive_friends):
             user_ids = tf.tile(user_id, [len(positive_friends)*2])
             u_reward_from_discriminator = user_discriminator_reward(user_ids, sampled_ids, is_gen=True)
             u_reward_from_discriminator = tf.multiply(u_reward_from_discriminator, reward_weight)
-            u_g_loss = -tf.reduce_mean(tf.multiply(log_sampled_prob, u_reward_from_discriminator)) + compute_l2_regularization(u_g_trainable_variables, 0.001)
+
+            regular_loss = regularization * tf.nn.l2_loss(get_emb_from_item_space(user_id) - tf.nn.embedding_lookup(u_g_user_emb_matrix, user_id))
+
+            u_g_loss = -tf.reduce_mean(tf.multiply(log_sampled_prob, u_reward_from_discriminator)) + regular_loss + compute_l2_regularization(u_g_trainable_variables, 1e-3)
 
         grad = tape.gradient(u_g_loss, u_g_trainable_variables)
         optimizer.apply_gradients(zip(grad, u_g_trainable_variables))
@@ -408,14 +416,19 @@ if __name__=="__main__":
                 batch_losses = list()
                 previous_epoch = dl.epoch_cnt
                 print("average loss at epoch %d is : %f" % (dl.epoch_cnt, mean_batch_loss))
-                if np.abs((previous_batch_loss - mean_batch_loss) / mean_batch_loss) < 0.05:
+                print('l2_loss: %f' % compute_l2_regularization(i_d_trainable_variables, 1))
+                if np.abs((previous_batch_loss - mean_batch_loss) / mean_batch_loss) < 0.01:
                     break
                 previous_batch_loss = mean_batch_loss
             if batch_cnt % report_fr == 0:
                 print(loss)
+                print('l2_loss: %f' % compute_l2_regularization(i_d_trainable_variables, 1))
             batch_cnt += 1
         print("end of item disc")
-        print("dis " + str(simple_test('dis')))
+        log = simple_test('dis')
+        print("dis " + str(log))
+        with open('log.txt', 'a') as f:
+            f.write(str(circle) + '\tdis\t' + str(log) + '\n')
 
         # train item generator
         dl.epoch_cnt = 0
@@ -436,13 +449,19 @@ if __name__=="__main__":
                 batch_losses = list()
                 previous_epoch = dl.epoch_cnt
                 print("loss at epoch %d is : %f" % (dl.epoch_cnt, mean_batch_loss))
-                if np.abs((previous_batch_loss - mean_batch_loss) / mean_batch_loss) < 0.05:
+                if np.abs((previous_batch_loss - mean_batch_loss) / mean_batch_loss) < 0.01:
                     break
                 previous_batch_loss = mean_batch_loss
             print(loss)
+            print('l2_loss: %f' % compute_l2_regularization(i_g_trainable_variables, 1))
             batch_cnt += 1
+            if loss < 1e-3:
+                break
         print("end of item gene")
-        print("gen " + str(simple_test('gen')))
+        log = simple_test('gen')
+        print("gen " + str(log))
+        with open('log.txt', 'a') as f:
+            f.write(str(circle) + '\tgen\t' + str(log) + '\n')
 
         # train user gan
         dl.set_data('user')
@@ -467,11 +486,12 @@ if __name__=="__main__":
                 batch_losses = list()
                 previous_epoch = dl.epoch_cnt
                 print("average loss at epoch %d is : %f" % (dl.epoch_cnt, mean_batch_loss))
-                if np.abs((previous_batch_loss - mean_batch_loss) / mean_batch_loss) < 0.05:
+                if np.abs((previous_batch_loss - mean_batch_loss) / mean_batch_loss) < 0.01:
                     break
                 previous_batch_loss = mean_batch_loss
             if batch_cnt % report_fr == 0:
                 print(loss)
+                print('l2_loss: %f' % compute_l2_regularization(u_d_trainable_variables, 1))
             batch_cnt += 1
         print("end of user disc")
 
@@ -495,38 +515,42 @@ if __name__=="__main__":
                 batch_losses = list()
                 previous_epoch = dl.epoch_cnt
                 print("loss at epoch %d is : %f" % (dl.epoch_cnt, mean_batch_loss))
-                if np.abs((previous_batch_loss - mean_batch_loss) / mean_batch_loss) < 0.05:
+                if np.abs((previous_batch_loss - mean_batch_loss) / mean_batch_loss) < 0.01:
                     break
                 previous_batch_loss = mean_batch_loss
+            if loss < 1e-3:
+                break
+            print('l2_loss: %f' % compute_l2_regularization(u_g_trainable_variables, 1))
             print(loss)
             batch_cnt += 1
         print("end of user gen")
-        #
-        # train cross-unit
-        dl.epoch_cnt = 0
-        previous_epoch = 0
-        loss = 10
-        batch_cnt = 0
-        batch_losses = []
-        previous_batch_loss = 100
-        while dl.epoch_cnt < 2:
-            batch = next(dl)
-            user_ids, _ = tf.stack(batch, axis=1)
-            loss = train_transfer_component(user_ids)
-            batch_losses.append(loss)
-            if previous_epoch < dl.epoch_cnt:
-                save_path = manager.save()
-                print("Saved checkpoint for transfer step {}: {}".format(dl.epoch_cnt, save_path))
-                mean_batch_loss = float(np.mean(batch_losses))
-                batch_losses = list()
-                previous_epoch = dl.epoch_cnt
-                print("loss at epoch %d is : %f" % (dl.epoch_cnt, mean_batch_loss))
-                if np.abs((previous_batch_loss - mean_batch_loss) / mean_batch_loss) < 0.05:
-                    break
-                previous_batch_loss = mean_batch_loss
-            print(loss)
-            batch_cnt += 1
-        print("end of transfer part")
+
+
+        # # train cross-unit
+        # dl.epoch_cnt = 0
+        # previous_epoch = 0
+        # loss = 10
+        # batch_cnt = 0
+        # batch_losses = []
+        # previous_batch_loss = 100
+        # while dl.epoch_cnt < 2:
+        #     batch = next(dl)
+        #     user_ids, _ = tf.stack(batch, axis=1)
+        #     loss = train_transfer_component(user_ids)
+        #     batch_losses.append(loss)
+        #     if previous_epoch < dl.epoch_cnt:
+        #         save_path = manager.save()
+        #         print("Saved checkpoint for transfer step {}: {}".format(dl.epoch_cnt, save_path))
+        #         mean_batch_loss = float(np.mean(batch_losses))
+        #         batch_losses = list()
+        #         previous_epoch = dl.epoch_cnt
+        #         print("loss at epoch %d is : %f" % (dl.epoch_cnt, mean_batch_loss))
+        #         if np.abs((previous_batch_loss - mean_batch_loss) / mean_batch_loss) < 0.01:
+        #             break
+        #         previous_batch_loss = mean_batch_loss
+        #         print(loss)
+        #     batch_cnt += 1
+        # print("end of transfer part")
 
 
 
