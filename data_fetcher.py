@@ -33,6 +33,11 @@ class data_loader:
         self.ratings = [(self.r_u_m[u], self.r_i_m[i]) for u, i in self.ratings]
         self.socials = [(self.r_u_m[u], self.r_u_m[f]) for u, f in self.socials]
 
+        self.write_mapping(base_path + 'new_rating.csv', self.ratings)
+        self.write_mapping(base_path + 'new_social.csv', self.socials)
+
+
+
 
         random.shuffle(self.ratings)
         random.shuffle(self.socials)
