@@ -3,40 +3,65 @@ import numpy as np
 import tensorflow_probability as tfp
 from tensorflow.keras.optimizers import RMSprop
 from data_fetcher import data_loader
+import config
 
 import multiprocessing
 
 cores = multiprocessing.cpu_count()
 
 tf.random.set_seed(3615)
+np.random.seed(3615)
 tfd = tfp.distributions
 
-dims = 8
+dims = config.emb_dim
 batch_size = 128
 regularization = 100
 dl = data_loader(batch_size, 'item')
 
 n_users = dl.n_user
 n_items = dl.n_item
-print(n_items)
-print(n_users)
+print("num users: %d " % n_users)
+print("num_items: %d " % n_items)
 
-optimizer = RMSprop(0.001)
+optimizer = RMSprop(1e-3)
 initdelta = 0.05
 
+if config.load_pretrained_emb:
+    # item space generator
+    i_g_user_emb_matrix = tf.Variable(dl.item_space_user_embedding, name='i_g_user', dtype=tf.float32)
+    i_g_item_emb_matrix = tf.Variable(dl.item_space_item_embedding, name='i_g_item', dtype=tf.float32)
+    i_g_bias = tf.Variable(tf.zeros([n_items]), dtype=tf.float32, name='i_g_bias')
 
-# positive_friend_indices = [2, 4, 3]
-# negative_friend_indices = [0, 0, 0]
+    # user space generator
+    u_g_user_emb_matrix = tf.Variable(dl.social_space_user_embedding, name='u_g_user', dtype=tf.float32)
+    u_g_bias = tf.Variable(tf.zeros([n_users]), dtype=tf.float32, name='u_g_bias')
 
+    # item space discriminator
+    i_d_user_emb_matrix = tf.Variable(dl.item_space_user_embedding, name='i_d_user', dtype=tf.float32)
+    i_d_item_emb_matrix = tf.Variable(dl.item_space_item_embedding, name='i_d_item', dtype=tf.float32)
+    i_d_bias = tf.Variable(tf.zeros([n_items]), dtype=tf.float32, name='i_d_bias')
 
-# item space generator
-i_g_user_emb_matrix = tf.Variable(tf.random.uniform([n_users, dims], name='i_g_user', minval=-initdelta, maxval=initdelta))
-i_g_item_emb_matrix = tf.Variable(tf.random.uniform([n_items, dims], name='i_g_item', minval=-initdelta, maxval=initdelta))
-i_g_bias = tf.Variable(tf.zeros([n_items]), dtype=tf.float32, name='i_g_bias')
+    # user space discriminator
+    u_d_user_emb_matrix = tf.Variable(dl.social_space_user_embedding, name='u_d_user', dtype=tf.float32)
+    u_d_bias = tf.Variable(tf.zeros([n_users]), dtype=tf.float32, name='u_d_bias')
+else:
+    # item space generator
+    i_g_user_emb_matrix = tf.Variable(tf.random.uniform([n_users, dims], name='i_g_user', minval=-initdelta, maxval=initdelta))
+    i_g_item_emb_matrix = tf.Variable(tf.random.uniform([n_items, dims], name='i_g_item', minval=-initdelta, maxval=initdelta))
+    i_g_bias = tf.Variable(tf.zeros([n_items]), dtype=tf.float32, name='i_g_bias')
 
-# user space generator
-u_g_user_emb_matrix = tf.Variable(tf.random.uniform([n_users, dims], name='u_g_user', minval=-initdelta, maxval=initdelta))
-u_g_bias = tf.Variable(tf.zeros([n_users]), dtype=tf.float32, name='u_g_bias')
+    # user space generator
+    u_g_user_emb_matrix = tf.Variable(tf.random.uniform([n_users, dims], name='u_g_user', minval=-initdelta, maxval=initdelta))
+    u_g_bias = tf.Variable(tf.zeros([n_users]), dtype=tf.float32, name='u_g_bias')
+
+    # item space discriminator
+    i_d_user_emb_matrix = tf.Variable(tf.random.uniform([n_users, dims], name='i_d_user', minval=-initdelta, maxval=initdelta))
+    i_d_item_emb_matrix = tf.Variable(tf.random.uniform([n_items, dims], name='i_d_item', minval=-initdelta, maxval=initdelta))
+    i_d_bias = tf.Variable(tf.zeros([n_items]), dtype=tf.float32, name='i_d_bias')
+
+    # user space discriminator
+    u_d_user_emb_matrix = tf.Variable(tf.random.uniform([n_users, dims], name='u_d_user', minval=-initdelta, maxval=initdelta))
+    u_d_bias = tf.Variable(tf.zeros([n_users]), dtype=tf.float32, name='u_d_bias')
 
 # social space to item space mapping
 si_w1 = tf.Variable(tf.random.normal([dims, 32], name='si_w1', mean=0, stddev=0.01))
@@ -59,15 +84,6 @@ is_b3 = tf.Variable(tf.zeros([32]), name='is_b3')
 is_w4 = tf.Variable(tf.random.normal([32, dims], name='is_w4', mean=0, stddev=0.01))
 is_b4 = tf.Variable(tf.zeros([dims]), name='is_b4')
 
-# item space discriminator
-i_d_user_emb_matrix = tf.Variable(tf.random.uniform([n_users, dims], name='i_d_user', minval=-initdelta, maxval=initdelta))
-i_d_item_emb_matrix = tf.Variable(tf.random.uniform([n_items, dims], name='i_d_item', minval=-initdelta, maxval=initdelta))
-i_d_bias = tf.Variable(tf.zeros([n_items]), dtype=tf.float32, name='i_d_bias')
-
-
-# user space discriminator
-u_d_user_emb_matrix = tf.Variable(tf.random.uniform([n_users, dims], name='u_d_user', minval=-initdelta, maxval=initdelta))
-u_d_bias = tf.Variable(tf.zeros([n_users]), dtype=tf.float32, name='u_d_bias')
 
 
 # trainable vars
@@ -81,8 +97,10 @@ u_d_para = [u_d_user_emb_matrix, u_d_bias]
 
 si_trainable_vars = [u_g_user_emb_matrix] + si_para
 is_trainable_vars = [i_g_user_emb_matrix] + is_para
+
 i_g_trainable_variables = [i_g_item_emb_matrix, i_g_user_emb_matrix, i_g_bias] + si_para
 u_g_trainable_variables = [u_g_user_emb_matrix, u_g_bias] + is_para
+
 transfer_trainable_variables = si_trainable_vars + is_trainable_vars
 i_d_trainable_variables = [i_d_user_emb_matrix, i_d_item_emb_matrix, i_d_bias]
 u_d_trainable_variables = [u_d_user_emb_matrix, u_d_bias]
@@ -148,58 +166,92 @@ def simple_test_one_user(x):
     return np.array([p_3, p_5, p_10, ndcg_3, ndcg_5, ndcg_10])
 
 
+# Item Discriminator
+def item_discriminator_para_lookup(user_ids, pos_item_ids, neg_item_ids):
+    i_d_user_embedding = tf.nn.embedding_lookup(i_d_user_emb_matrix, user_ids)
+    i_d_pos_item_embedding = tf.nn.embedding_lookup(i_d_item_emb_matrix, pos_item_ids)
+    i_d_neg_item_embedding = tf.nn.embedding_lookup(i_d_item_emb_matrix, neg_item_ids)
+    i_d_pos_sbias = tf.gather(i_d_bias, pos_item_ids)
+    i_d_neg_sbias = tf.gather(i_d_bias, neg_item_ids)
+    return i_d_user_embedding, i_d_pos_item_embedding, i_d_neg_item_embedding, i_d_pos_sbias, i_d_neg_sbias
 
-
-# item discriminator
-def item_discriminator_reward(user_indices, item_indices, is_gen=False):
+def item_discriminator_reward_for_gen(user_indices, item_indices):
     i_d_user_embedding = tf.nn.embedding_lookup(i_d_user_emb_matrix, user_indices)
     i_d_item_embedding = tf.nn.embedding_lookup(i_d_item_emb_matrix, item_indices)
     i_d_sbias = tf.gather(i_d_bias, item_indices)
     i_d_inner_prod = tf.reduce_sum(tf.multiply(i_d_user_embedding, i_d_item_embedding), axis=-1) + i_d_sbias
-    if is_gen:
-        return tf.math.log(1 + tf.math.exp(i_d_inner_prod))
+    return tf.math.log(tf.clip_by_value(1 + tf.math.exp(i_d_inner_prod), 1e-5, 1))
+
+
+def item_discriminator_reward(i_d_user_embedding, i_d_item_embedding, i_d_sbias):
+    i_d_inner_prod = tf.reduce_sum(tf.multiply(i_d_user_embedding, i_d_item_embedding), axis=-1) + i_d_sbias
     i_sigmoid = tf.math.sigmoid(i_d_inner_prod)
     return i_sigmoid
 
+
 def item_discriminator_loss(user_indices, positive_item_indices, negative_item_indices):
-    positive_reward = item_discriminator_reward(user_indices, positive_item_indices)
-    negative_reward = item_discriminator_reward(user_indices, negative_item_indices)
-    i_d_loss = -tf.math.log(positive_reward) - tf.math.log(1 - negative_reward)
+    i_d_user_embedding, i_d_pos_item_embedding, i_d_neg_item_embedding, i_d_pos_sbias, i_d_neg_sbias = \
+        item_discriminator_para_lookup(user_indices, positive_item_indices, negative_item_indices)
+
+    positive_reward = item_discriminator_reward(i_d_user_embedding, i_d_pos_item_embedding, i_d_pos_sbias)
+    negative_reward = item_discriminator_reward(i_d_user_embedding, i_d_neg_item_embedding, i_d_neg_sbias)
+
+    i_d_loss = -tf.math.log(tf.clip_by_value(positive_reward, 1e-5, 1)) - tf.math.log(tf.clip_by_value(1 - negative_reward, 1e-5, 1)) + \
+               compute_l2_regularization([i_d_user_embedding, i_d_user_embedding, i_d_pos_item_embedding, i_d_neg_item_embedding, i_d_pos_sbias, i_d_neg_sbias], config.dis_l2_reg)
     return i_d_loss / batch_size
+
 
 def train_item_discriminator(user_indices, positive_item_indices, negative_item_indices):
     with tf.GradientTape() as tape:
-        item_d_loss = item_discriminator_loss(user_indices, positive_item_indices, negative_item_indices) + compute_l2_regularization(i_d_trainable_variables, 1e-8)
+        item_d_loss = item_discriminator_loss(user_indices, positive_item_indices, negative_item_indices)
         item_d_grad = tape.gradient(item_d_loss, i_d_trainable_variables)
         optimizer.apply_gradients(zip(item_d_grad, i_d_trainable_variables))
         return tf.reduce_sum(item_d_loss).numpy()
 
-# user discriminator
-def user_discriminator_reward(user_indices, friend_indices, is_gen=False):
+
+# User Discriminator
+def user_discriminator_para_lookup(user_ids, pos_friend_ids, neg_friend_ids):
+    u_d_user_embedding = tf.nn.embedding_lookup(u_d_user_emb_matrix, user_ids)
+    u_d_pos_friend_embedding = tf.nn.embedding_lookup(u_d_user_emb_matrix, pos_friend_ids)
+    u_d_neg_friend_embedding = tf.nn.embedding_lookup(u_d_user_emb_matrix, neg_friend_ids)
+    u_d_pos_sbias = tf.gather(u_d_bias, pos_friend_ids)
+    u_d_neg_sbias = tf.gather(u_d_bias, neg_friend_ids)
+    return u_d_user_embedding, u_d_pos_friend_embedding, u_d_neg_friend_embedding, u_d_pos_sbias, u_d_neg_sbias
+
+
+def user_discriminator_reward_for_gen(user_indices, friend_indices):
     u_d_user_embedding = tf.nn.embedding_lookup(u_d_user_emb_matrix, user_indices)
     u_d_friend_embedding = tf.nn.embedding_lookup(u_d_user_emb_matrix, friend_indices)
     u_d_sbias = tf.gather(u_d_bias, friend_indices)
     u_d_inner_prod = tf.reduce_sum(tf.multiply(u_d_user_embedding, u_d_friend_embedding), axis=-1) + u_d_sbias
-    if is_gen:
-        return tf.math.log(1 + tf.math.exp(u_d_inner_prod))
+    return tf.math.log(tf.clip_by_value(1 + tf.math.exp(u_d_inner_prod), 1e-5, 1))
+
+def user_discriminator_reward(u_d_user_embedding, u_d_friend_embedding, u_d_sbias):
+    u_d_inner_prod = tf.reduce_sum(tf.multiply(u_d_user_embedding, u_d_friend_embedding), axis=-1) + u_d_sbias
     u_sigmoid = tf.math.sigmoid(u_d_inner_prod)
     return u_sigmoid
 
+
 def user_discriminator_loss(user_indices, positive_friend_indices, negative_friend_indices):
-    positive_reward = user_discriminator_reward(user_indices, positive_friend_indices)
-    negative_reward = user_discriminator_reward(user_indices, negative_friend_indices)
-    u_d_loss = -tf.math.log(positive_reward) - tf.math.log(1 - negative_reward)
-    return u_d_loss
+    u_d_user_embedding, u_d_pos_friend_embedding, u_d_neg_friend_embedding, u_d_pos_sbias, u_d_neg_sbias \
+        = user_discriminator_para_lookup(user_indices, positive_friend_indices, negative_friend_indices)
+
+    positive_reward = user_discriminator_reward(u_d_user_embedding, u_d_pos_friend_embedding, u_d_pos_sbias)
+    negative_reward = user_discriminator_reward(u_d_user_embedding, u_d_neg_friend_embedding, u_d_neg_sbias)
+    u_d_loss = -tf.math.log(tf.clip_by_value(positive_reward, 1e-5, 1)) - tf.math.log(tf.clip_by_value(1 - negative_reward, 1e-5, 1)) + \
+               compute_l2_regularization([u_d_user_embedding, u_d_pos_friend_embedding, u_d_neg_friend_embedding, u_d_pos_sbias, u_d_neg_sbias], config.dis_l2_reg)
+    return u_d_loss / batch_size
+
 
 def train_user_discriminator(user_indices, positive_friend_indices, negative_friend_indices):
     with tf.GradientTape() as tape:
-        user_d_loss = user_discriminator_loss(user_indices, positive_friend_indices, negative_friend_indices) + compute_l2_regularization(u_d_trainable_variables, 1e-8)
+        user_d_loss = user_discriminator_loss(user_indices, positive_friend_indices, negative_friend_indices)
         user_d_grad = tape.gradient(user_d_loss, u_d_trainable_variables)
         optimizer.apply_gradients(zip(user_d_grad, u_d_trainable_variables))
         return tf.reduce_sum(user_d_loss).numpy()
 
 
-# social -> item mapping
+# Social -> Item mapping
 def get_emb_from_social_space(user_indices):
     u_g_user_embedding = tf.nn.embedding_lookup(u_g_user_emb_matrix, user_indices)
     return transfer_to_item_domain(u_g_user_embedding)
@@ -212,8 +264,7 @@ def transfer_to_item_domain(u_user_embeddings):
     return i_user_embedding_sim
 
 
-
-# item -> social mapping
+# Item -> Social mapping
 def get_emb_from_item_space(user_indices):
     i_g_user_embedding = tf.nn.embedding_lookup(i_g_user_emb_matrix, user_indices)
     return transfer_to_social_domain(i_g_user_embedding)
@@ -226,30 +277,12 @@ def transfer_to_social_domain(i_user_embeddings):
     return u_user_embedding_sim
 
 
-# def train_transfer_component(user_indices):
-#     # transfer loss
-#     with tf.GradientTape() as tape:
-#         u_g_user_embedding = tf.nn.embedding_lookup(u_g_user_emb_matrix, user_indices)
-#         i_g_user_embedding = tf.nn.embedding_lookup(i_g_user_emb_matrix, user_indices)
-#
-#         regular_loss = regularization * (tf.nn.l2_loss(
-#             transfer_to_social_domain(transfer_to_item_domain(u_g_user_embedding)) - u_g_user_embedding) +
-#                                          tf.nn.l2_loss(transfer_to_item_domain(
-#                                              transfer_to_social_domain(i_g_user_embedding)) - i_g_user_embedding) +
-#                                          compute_l2_regularization(transfer_trainable_variables, 1))
-#     # apply gradients
-#     grad = tape.gradient(regular_loss, transfer_trainable_variables)
-#     optimizer.apply_gradients(zip(grad, transfer_trainable_variables))
-#     return regular_loss.numpy()
 
-
-
-
-# item generator
+# Item Generator
 def item_generator_sample_prob(user_indices):
     i_g_user_embedding = get_emb_from_social_space(user_indices)
     user_all_item_logits = tf.matmul(i_g_user_embedding, i_g_item_emb_matrix, transpose_b=True) + i_g_bias
-    user_all_item_softmax = tf.nn.softmax(user_all_item_logits/ 0.2)
+    user_all_item_softmax = tf.clip_by_value(tf.nn.softmax(user_all_item_logits/ 0.2), 1e-5, 1)
     dist = tfd.Categorical(probs=user_all_item_softmax)  # for each user, sample an item
     sampled_ids = dist.sample(sample_shape=[])
     sampled_log_prob = tf.math.log(tf.gather_nd(user_all_item_softmax, indices=list(enumerate(sampled_ids))))
@@ -259,27 +292,23 @@ def item_generator_sample_prob_importance_sampling(user_id, pos):
     sample_lambda = 0.2
     i_g_user_embedding = get_emb_from_social_space(user_id)
     user_all_item_logits = tf.reduce_sum(tf.multiply(i_g_user_embedding, i_g_item_emb_matrix), 1) + i_g_bias
-    user_all_item_softmax_ori = tf.reshape(tf.nn.softmax(tf.reshape(user_all_item_logits, [1, -1])), [-1])
+    user_all_item_softmax_ori = tf.clip_by_value(tf.reshape(tf.nn.softmax(tf.reshape(user_all_item_logits, [1, -1])), [-1]), 1e-5, 1)
 
     # for sampling, we use another process which does the same thing (tf softmax has bugs)
-    user_all_item_exp_logits = np.exp(tf.reshape(user_all_item_logits, [-1]).numpy())
-    user_all_item_softmax = user_all_item_exp_logits / np.sum(user_all_item_exp_logits)
+    # user_all_item_exp_logits = np.exp(tf.reshape(user_all_item_logits, [-1]).numpy())
+    # user_all_item_softmax = user_all_item_exp_logits / np.sum(user_all_item_exp_logits) + 1e-5   # we clip here
+    user_all_item_softmax = user_all_item_softmax_ori.numpy()
     # importance sampling
     pn = (1 - sample_lambda) * user_all_item_softmax
     pn[pos] += sample_lambda / len(pos)
-    # pn = pn + 1e-10
     pn = pn / np.sum(pn)
 
     sampled_items = np.random.choice(np.arange(n_items), 2 * len(pos), p=pn)
-    # dist = tfd.Categorical(probs=pn)  # for this user, sample items according to Importance Sampling
-    # sampled_items = dist.sample(sample_shape=[len(pos) * 2], seed=3615)
-    sampled_prob_ori = tf.gather(user_all_item_softmax_ori, indices=sampled_items)
 
+    sampled_prob_ori = tf.gather(user_all_item_softmax_ori, indices=sampled_items)
     sampled_prob = user_all_item_softmax[sampled_items]
-    # print(sampled_prob)
     reward_reweights = sampled_prob / pn[sampled_items]
     sampled_log_prob = tf.math.log(sampled_prob_ori)
-    # print(sampled_log_prob)
     return sampled_items, sampled_log_prob, reward_reweights
 
 def train_item_generator(user_indices, all_positive_items):
@@ -290,38 +319,39 @@ def train_item_generator(user_indices, all_positive_items):
             sampled_ids, log_sampled_prob, reward_weight = item_generator_sample_prob_importance_sampling(user_id, positive_items)
             # get reward from discriminator
             user_ids = tf.tile(user_id, [len(positive_items)*2])
-            i_reward_from_discriminator = item_discriminator_reward(user_ids, sampled_ids, is_gen=True)
+            i_reward_from_discriminator = item_discriminator_reward_for_gen(user_ids, sampled_ids)
             i_reward_from_discriminator = tf.multiply(i_reward_from_discriminator, reward_weight)
 
 
-            regular_loss = regularization * tf.nn.l2_loss(
-                get_emb_from_social_space(user_id) - tf.nn.embedding_lookup(i_g_user_emb_matrix, user_id))
+            regular_loss = regularization * tf.nn.l2_loss(get_emb_from_social_space(user_id) - tf.nn.embedding_lookup(i_g_user_emb_matrix, user_id))
+            para_loss = config.gen_l2_reg * (tf.nn.l2_loss(tf.nn.embedding_lookup(i_g_item_emb_matrix, sampled_ids)) +
+                                            tf.nn.l2_loss(tf.nn.embedding_lookup(i_g_user_emb_matrix, user_id)))
 
-            i_g_loss = -tf.reduce_mean(tf.multiply(log_sampled_prob, i_reward_from_discriminator)) + regular_loss + compute_l2_regularization(i_g_trainable_variables, 1e-3)
+            i_g_loss = -tf.reduce_mean(tf.multiply(log_sampled_prob, i_reward_from_discriminator)) + regular_loss + para_loss  # + compute_l2_regularization(i_g_trainable_variables, 1e-3)
 
         grad = tape.gradient(i_g_loss, i_g_trainable_variables)
         optimizer.apply_gradients(zip(grad, i_g_trainable_variables))
     return tf.reduce_sum(i_g_loss).numpy() / batch_size
 
-# user generator
+# User Generator
 def user_generator_sample_prob(user_indices):
     u_g_user_embedding = get_emb_from_item_space(user_indices)
     user_all_friend_logits = tf.matmul(u_g_user_embedding, u_g_user_emb_matrix, transpose_b=True) + u_g_bias
-    user_all_friend_softmax = tf.nn.softmax(user_all_friend_logits)
+    user_all_friend_softmax = tf.clip_by_value(tf.nn.softmax(user_all_friend_logits / 0.2), 1e-5, 1)
     dist = tfd.Categorical(probs=user_all_friend_softmax)  # for each user, sample an item
     sampled_ids = dist.sample(sample_shape=[])
-    sampled_log_prob = tf.gather_nd(user_all_friend_softmax, indices=list(enumerate(sampled_ids)))
+    sampled_log_prob = tf.math.log(tf.gather_nd(user_all_friend_softmax, indices=list(enumerate(sampled_ids))))
     return sampled_ids, sampled_log_prob
 
 def user_generator_sample_prob_importance_sampling(user_id, pos):
     sample_lambda = 0.2
     u_g_user_embedding = get_emb_from_item_space(user_id)
-    user_all_friend_logits = tf.matmul(u_g_user_embedding, u_g_user_emb_matrix, transpose_b=True) + u_g_bias
-    user_all_friend_softmax_ori = tf.reshape(tf.nn.softmax(tf.reshape(user_all_friend_logits, [1, -1])), [-1])
+    user_all_friend_logits = tf.reduce_sum(tf.multiply(u_g_user_embedding, u_g_user_emb_matrix), 1) + u_g_bias
+    user_all_friend_softmax_ori = tf.clip_by_value(tf.reshape(tf.nn.softmax(tf.reshape(user_all_friend_logits, [1, -1])), [-1]), 1e-5, 1)
 
     # for sampling, we use another process which does the same thing (tf softmax has bugs)
     user_all_friend_exp_logits = np.exp(tf.reshape(user_all_friend_logits, [-1]).numpy())
-    user_all_friend_softmax = user_all_friend_exp_logits / np.sum(user_all_friend_exp_logits)
+    user_all_friend_softmax = user_all_friend_exp_logits / np.sum(user_all_friend_exp_logits) + 1e-5   # we clip here
     # importance sampling
     pn = (1 - sample_lambda) * user_all_friend_softmax
     pn[pos] += sample_lambda / len(pos)
@@ -343,16 +373,19 @@ def train_user_generator(user_indices, all_positive_friends):
             sampled_ids, log_sampled_prob, reward_weight = user_generator_sample_prob_importance_sampling(user_id, positive_friends)
             # get reward from discriminator
             user_ids = tf.tile(user_id, [len(positive_friends)*2])
-            u_reward_from_discriminator = user_discriminator_reward(user_ids, sampled_ids, is_gen=True)
+            u_reward_from_discriminator = user_discriminator_reward_for_gen(user_ids, sampled_ids)
             u_reward_from_discriminator = tf.multiply(u_reward_from_discriminator, reward_weight)
 
             regular_loss = regularization * tf.nn.l2_loss(get_emb_from_item_space(user_id) - tf.nn.embedding_lookup(u_g_user_emb_matrix, user_id))
+            para_loss = config.gen_l2_reg * (tf.nn.l2_loss(tf.nn.embedding_lookup(u_g_user_emb_matrix, sampled_ids)) +
+                                             tf.nn.embedding_lookup(u_g_user_emb_matrix, user_id))
 
-            u_g_loss = -tf.reduce_mean(tf.multiply(log_sampled_prob, u_reward_from_discriminator)) + regular_loss + compute_l2_regularization(u_g_trainable_variables, 1e-3)
+            u_g_loss = -tf.reduce_sum(tf.multiply(log_sampled_prob, u_reward_from_discriminator)) + regular_loss + para_loss  # + compute_l2_regularization(u_g_trainable_variables, 1e-3)
 
         grad = tape.gradient(u_g_loss, u_g_trainable_variables)
         optimizer.apply_gradients(zip(grad, u_g_trainable_variables))
     return tf.reduce_sum(u_g_loss).numpy() / batch_size
+
 
 def simple_test(model='gen'):
     result = np.array([0.] * 6)
@@ -385,12 +418,9 @@ def simple_test(model='gen'):
     return ret
 
 
-# print("gen " + str(simple_test('gen')))
-# print("dis " + str(simple_test('dis')))
-
 
 if __name__=="__main__":
-    report_fr = 50
+    report_fr = 10
 
     for circle in range(15):
         # Train item gan
@@ -402,7 +432,7 @@ if __name__=="__main__":
         batch_cnt = 0
         batch_losses = []
         previous_batch_loss = 100
-        while dl.epoch_cnt < 10:
+        while dl.epoch_cnt < 15:
             batch = next(dl)
             user_ids, positive_items = tf.stack(batch, axis=1)
             negative_items, _ = item_generator_sample_prob(user_ids)
@@ -417,8 +447,8 @@ if __name__=="__main__":
                 previous_epoch = dl.epoch_cnt
                 print("average loss at epoch %d is : %f" % (dl.epoch_cnt, mean_batch_loss))
                 print('l2_loss: %f' % compute_l2_regularization(i_d_trainable_variables, 1))
-                if np.abs((previous_batch_loss - mean_batch_loss) / mean_batch_loss) < 0.01:
-                    break
+                # if np.abs((previous_batch_loss - mean_batch_loss) / mean_batch_loss) < 0.001:
+                #     break
                 previous_batch_loss = mean_batch_loss
             if batch_cnt % report_fr == 0:
                 print(loss)
@@ -436,7 +466,7 @@ if __name__=="__main__":
         previous_batch_loss = 100
         batch_cnt = 0
         batch_losses = []
-        while dl.epoch_cnt < 10:
+        while dl.epoch_cnt < 15:
             batch = next(dl)
             all_positive_items = [dl.user_pos_train[u] for u, _ in batch]
             user_ids, _ = tf.stack(batch, axis=1)
@@ -449,14 +479,14 @@ if __name__=="__main__":
                 batch_losses = list()
                 previous_epoch = dl.epoch_cnt
                 print("loss at epoch %d is : %f" % (dl.epoch_cnt, mean_batch_loss))
-                if np.abs((previous_batch_loss - mean_batch_loss) / mean_batch_loss) < 0.01:
-                    break
+                # if np.abs((previous_batch_loss - mean_batch_loss) / mean_batch_loss) < 0.01:
+                #     break
                 previous_batch_loss = mean_batch_loss
             print(loss)
             print('l2_loss: %f' % compute_l2_regularization(i_g_trainable_variables, 1))
             batch_cnt += 1
-            if loss < 1e-3:
-                break
+            # if loss < 1e-3:
+            #     break
         print("end of item gene")
         log = simple_test('gen')
         print("gen " + str(log))
@@ -486,8 +516,8 @@ if __name__=="__main__":
                 batch_losses = list()
                 previous_epoch = dl.epoch_cnt
                 print("average loss at epoch %d is : %f" % (dl.epoch_cnt, mean_batch_loss))
-                if np.abs((previous_batch_loss - mean_batch_loss) / mean_batch_loss) < 0.01:
-                    break
+                # if np.abs((previous_batch_loss - mean_batch_loss) / mean_batch_loss) < 0.01:
+                #     break
                 previous_batch_loss = mean_batch_loss
             if batch_cnt % report_fr == 0:
                 print(loss)
@@ -515,42 +545,17 @@ if __name__=="__main__":
                 batch_losses = list()
                 previous_epoch = dl.epoch_cnt
                 print("loss at epoch %d is : %f" % (dl.epoch_cnt, mean_batch_loss))
-                if np.abs((previous_batch_loss - mean_batch_loss) / mean_batch_loss) < 0.01:
-                    break
+                # if np.abs((previous_batch_loss - mean_batch_loss) / mean_batch_loss) < 0.01:
+                #     break
                 previous_batch_loss = mean_batch_loss
-            if loss < 1e-3:
-                break
+            # if loss < 1e-3:
+            #     break
             print('l2_loss: %f' % compute_l2_regularization(u_g_trainable_variables, 1))
             print(loss)
             batch_cnt += 1
         print("end of user gen")
 
 
-        # # train cross-unit
-        # dl.epoch_cnt = 0
-        # previous_epoch = 0
-        # loss = 10
-        # batch_cnt = 0
-        # batch_losses = []
-        # previous_batch_loss = 100
-        # while dl.epoch_cnt < 2:
-        #     batch = next(dl)
-        #     user_ids, _ = tf.stack(batch, axis=1)
-        #     loss = train_transfer_component(user_ids)
-        #     batch_losses.append(loss)
-        #     if previous_epoch < dl.epoch_cnt:
-        #         save_path = manager.save()
-        #         print("Saved checkpoint for transfer step {}: {}".format(dl.epoch_cnt, save_path))
-        #         mean_batch_loss = float(np.mean(batch_losses))
-        #         batch_losses = list()
-        #         previous_epoch = dl.epoch_cnt
-        #         print("loss at epoch %d is : %f" % (dl.epoch_cnt, mean_batch_loss))
-        #         if np.abs((previous_batch_loss - mean_batch_loss) / mean_batch_loss) < 0.01:
-        #             break
-        #         previous_batch_loss = mean_batch_loss
-        #         print(loss)
-        #     batch_cnt += 1
-        # print("end of transfer part")
 
 
 

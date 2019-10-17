@@ -1,15 +1,17 @@
 import math
 import random
+import numpy as np
+import config
 random.seed(3615)
 
 class data_loader:
-    def __init__(self, batch_size, d_flag="item"):
+    def __init__(self, batch_size, d_flag="item", read_emb=True):
         self.epoch_cnt = 0
         self.d_flag = d_flag
         self.batch_size = batch_size
-        base_path = 'data/ciao/'
-        rating_path = base_path + 'rating.csv'
-        social_path = base_path + 'social.csv'
+        self.base_path = 'data/ciao/'
+        rating_path = self.base_path + 'rating.csv'
+        social_path = self.base_path + 'social.csv'
 
         self.ratings = self.read_f(rating_path)
         self.socials = self.read_f(social_path)
@@ -17,7 +19,7 @@ class data_loader:
         self.ori_items = sorted(set([i for u, i in self.ratings]))
         self.item_mapping = list(enumerate(self.ori_items))
         self.r_i_m = dict([(v, k) for k, v in self.item_mapping])
-        self.write_mapping(base_path + 'item_mapping_new_to_ori.csv', self.item_mapping)
+        self.write_mapping(self.base_path + 'item_mapping_new_to_ori.csv', self.item_mapping)
         self.n_item = len(self.ori_items)
         self.all_items = set(self.r_i_m.values())
 
@@ -27,17 +29,19 @@ class data_loader:
         self.ori_users = sorted(self.ori_users)
         self.user_mapping = list(enumerate(self.ori_users))
         self.r_u_m = dict([(v, k) for k, v in self.user_mapping])
-        self.write_mapping(base_path + 'user_mapping_new_to_ori.csv', self.user_mapping)
+        self.write_mapping(self.base_path + 'user_mapping_new_to_ori.csv', self.user_mapping)
         self.n_user = len(self.ori_users)
-
+        # print("num users: %d" % len(self.r_u_m))
         self.ratings = [(self.r_u_m[u], self.r_i_m[i]) for u, i in self.ratings]
         self.socials = [(self.r_u_m[u], self.r_u_m[f]) for u, f in self.socials]
 
-        self.write_mapping(base_path + 'new_rating.csv', self.ratings)
-        self.write_mapping(base_path + 'new_social.csv', self.socials)
+        self.write_mapping(self.base_path + 'new_rating.csv', [(u, i + self.n_user) for u, i in self.ratings])
+        self.write_mapping(self.base_path + 'new_social.csv', self.socials)
 
 
-
+        if read_emb:
+            self.item_space_user_embedding, self.item_space_item_embedding = self.read_pretrained_embedding('item')
+            self.social_space_user_embedding = self.read_pretrained_embedding('social')
 
         random.shuffle(self.ratings)
         random.shuffle(self.socials)
@@ -70,6 +74,31 @@ class data_loader:
         # mark position of current data iterator
         self.i_pos = 0
         self.u_pos = 0
+
+
+    def read_pretrained_embedding(self, space):
+        if space == 'item':
+            with open(self.base_path + 'new_rating_emb_deepwalk_' + str(config.emb_dim) + '.emb', "r") as f:
+                lines = f.readlines()[1:]  # skip the first line
+                user_emb_matrix = np.random.rand(self.n_user, config.emb_dim)
+                item_emb_matrix = np.random.rand(self.n_item, config.emb_dim)
+                for line in lines:
+                    emd = line.split()
+                    obj_id = int(emd[0])
+                    if obj_id < self.n_user:
+                        user_emb_matrix[obj_id, :] = [float(i) for i in emd[1:]]
+                    else:
+                        item_emb_matrix[obj_id-self.n_user, :] = [float(i) for i in emd[1:]]
+                return user_emb_matrix, item_emb_matrix
+        elif space == 'social':
+            with open(self.base_path + 'new_social_emb_deepwalk_' + str(config.emb_dim) + '.emb', "r") as f:
+                lines = f.readlines()[1:]  # skip the first line
+                user_emb_matrix = np.random.rand(self.n_user, config.emb_dim)
+                for line in lines:
+                    emd = line.split()
+                    obj_id = int(emd[0])
+                    user_emb_matrix[obj_id, :] = [float(i) for i in emd[1:]]
+                return user_emb_matrix
 
     def write_mapping(self, fp, d):
         with open(fp, 'w') as f:
